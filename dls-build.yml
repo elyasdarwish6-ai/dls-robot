@@ -1,0 +1,77 @@
+name: Build DLS Robot APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get source code
+        uses: actions/checkout@v4
+
+      - name: Check repository
+        run: |
+          echo "=== Repository files ==="
+          find . -maxdepth 4 -type f | sort | head -200
+
+      - name: Find ZIP
+        run: |
+          ZIP=$(find . -maxdepth 3 -type f -name "*.zip" | head -1)
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No ZIP file found."
+            exit 1
+          fi
+          echo "ZIP found: $ZIP"
+          mkdir -p project
+          unzip -q "$ZIP" -d project
+
+      - name: Locate Android project
+        run: |
+          echo "=== Extracted files ==="
+          find project -maxdepth 6 -type f | sort | head -300
+
+          echo "=== Gradle files ==="
+          find project -type f \( -name "gradlew" -o -name "settings.gradle" -o -name "build.gradle" \)
+
+      - name: Build Android APK
+        run: |
+          GRADLEW=$(find project -type f -name "gradlew" | head -1)
+
+          if [ -n "$GRADLEW" ]; then
+            PROJECT_DIR=$(dirname "$GRADLEW")
+            echo "Gradle wrapper found:"
+            echo "$GRADLEW"
+            cd "$PROJECT_DIR"
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            BUILD=$(find project -type f -name "build.gradle" | head -1)
+
+            if [ -z "$BUILD" ]; then
+              echo "ERROR: Android Gradle project was not found."
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$BUILD")
+            echo "build.gradle found:"
+            echo "$BUILD"
+            cd "$PROJECT_DIR"
+
+            sudo apt-get update
+            sudo apt-get install -y gradle
+            gradle assembleDebug --no-daemon
+          fi
+
+      - name: Find APK
+        run: |
+          echo "=== APK files ==="
+          find project -type f -name "*.apk" -print
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLS-Robot-APK
+          path: project/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
